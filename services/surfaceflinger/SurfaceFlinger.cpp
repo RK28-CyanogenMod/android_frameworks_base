@@ -483,7 +483,7 @@ void SurfaceFlinger::handleConsoleEvents()
         hw.acquireScreen();
         // this is a temporary work-around, eventually this should be called
         // by the power-manager
-        SurfaceFlinger::turnElectronBeamOn(mElectronBeamAnimationMode);
+        //SurfaceFlinger::turnElectronBeamOn(mElectronBeamAnimationMode);
     }
 
     if (mDeferReleaseConsole && hw.isScreenAcquired()) {
@@ -2178,6 +2178,14 @@ status_t SurfaceFlinger::electronBeamOnAnimationImplLocked()
 
 status_t SurfaceFlinger::turnElectronBeamOffImplLocked(int32_t mode)
 {
+#ifdef HAS_LIMITED_EGL
+    // On limited EGL devices (RK2818), glClear + flip + setCanDraw(false)
+    // leaves the display in a broken state that cannot be recovered on wake.
+    // The kernel framebuffer blanking handles the display state, so we just
+    // let the power manager do its work without SurfaceFlinger intervention.
+    (void)mode;
+    return NO_ERROR;
+#else
     DisplayHardware& hw(graphicPlane(0).editDisplayHardware());
     if (!hw.canDraw()) {
         // we're already off
@@ -2198,6 +2206,7 @@ status_t SurfaceFlinger::turnElectronBeamOffImplLocked(int32_t mode)
     hw.setCanDraw(false);
 #endif
     return NO_ERROR;
+#endif
 }
 
 status_t SurfaceFlinger::turnElectronBeamOff(int32_t mode)
@@ -2228,7 +2237,7 @@ status_t SurfaceFlinger::turnElectronBeamOff(int32_t mode)
         // work-around: when the power-manager calls us we activate the
         // animation. eventually, the "on" animation will be called
         // by the power-manager itself
-        mElectronBeamAnimationMode = mode;
+        //mElectronBeamAnimationMode = mode;
     }
     return res;
 }
@@ -2237,6 +2246,12 @@ status_t SurfaceFlinger::turnElectronBeamOff(int32_t mode)
 
 status_t SurfaceFlinger::turnElectronBeamOnImplLocked(int32_t mode)
 {
+#ifdef HAS_LIMITED_EGL
+    // On limited EGL devices (RK2818), skip SurfaceFlinger screen-on handling.
+    // The kernel framebuffer unblanking and normal composition cycle handle it.
+    (void)mode;
+    return NO_ERROR;
+#else
     DisplayHardware& hw(graphicPlane(0).editDisplayHardware());
 #ifndef DO_NOT_SET_CAN_DRAW
     if (hw.canDraw()) {
@@ -2254,6 +2269,7 @@ status_t SurfaceFlinger::turnElectronBeamOnImplLocked(int32_t mode)
     signalEvent();
 
     return NO_ERROR;
+#endif
 }
 
 status_t SurfaceFlinger::turnElectronBeamOn(int32_t mode)
