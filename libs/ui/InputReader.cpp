@@ -1737,6 +1737,38 @@ void TouchInputMapper::parseCalibration() {
     const InputDeviceCalibration& in = getDevice()->getCalibration();
     Calibration& out = mCalibration;
 
+    // Reads the `pointercal` calibration parameters
+    if (!in.tryGetProperty(String8("touch.pointercal.x1"), out.x1)) {
+        out.x1 = 1.0f;
+    }
+    if (!in.tryGetProperty(String8("touch.pointercal.x2"), out.x2)) {
+        out.x2 = 0.0f;
+    }
+    if (!in.tryGetProperty(String8("touch.pointercal.x3"), out.x3)) {
+        out.x3 = 0.0f;
+    }
+    if (!in.tryGetProperty(String8("touch.pointercal.y1"), out.y1)) {
+        out.y1 = 0.0f;
+    }
+    if (!in.tryGetProperty(String8("touch.pointercal.y2"), out.y2)) {
+        out.y2 = 1.0f;
+    }
+    if (!in.tryGetProperty(String8("touch.pointercal.y3"), out.y3)) {
+        out.y3 = 0.0f;
+    }
+    if (!in.tryGetProperty(String8("touch.pointercal.scale"), out.scale)) {
+        out.scale = 1.0f;
+    }
+
+    // Divide all parameters by the scale factor
+    float scale = out.scale;
+    out.x1 /= scale;
+    out.x2 /= scale;
+    out.x3 /= scale;
+    out.y1 /= scale;
+    out.y2 /= scale;
+    out.y3 /= scale;
+
     // Touch Size
     out.touchSizeCalibration = Calibration::TOUCH_SIZE_CALIBRATION_DEFAULT;
     String8 touchSizeCalibrationString;
@@ -2377,8 +2409,13 @@ void TouchInputMapper::dispatchTouch(nsecs_t when, uint32_t policyFlags,
             const PointerData& in = touch->pointers[inIndex];
 
             // X and Y
-            float x = float(in.x - mLocked.xOrigin) * mLocked.xScale;
-            float y = float(in.y - mLocked.yOrigin) * mLocked.yScale;
+            float rawX = in.x;
+            float rawY = in.y;
+            float calibratedX = mCalibration.x1 * rawX + mCalibration.x2 * rawY + mCalibration.x3;
+            float calibratedY = mCalibration.y1 * rawX + mCalibration.y2 * rawY + mCalibration.y3;
+
+            float x = float(calibratedX - mLocked.xOrigin) * mLocked.xScale;
+            float y = float(calibratedY - mLocked.yOrigin) * mLocked.yScale;
 
             // ToolMajor and ToolMinor
             float toolMajor, toolMinor;
