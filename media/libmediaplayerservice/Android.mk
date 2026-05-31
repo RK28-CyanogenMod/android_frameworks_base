@@ -40,12 +40,20 @@ LOCAL_SHARED_LIBRARIES :=     		\
 LOCAL_STATIC_LIBRARIES := \
         libstagefright_rtsp
 
+# PV/OpenCORE is linked unconditionally for RK2818 (hardware video decode requires it).
+# Do NOT set BUILD_WITHOUT_PV=true for this platform.
+ifeq ($(strip $(TARGET_BOARD_PLATFORM)),rk2818)
+LOCAL_SHARED_LIBRARIES += \
+	libopencore_player    \
+	libopencore_author
+else
 ifneq ($(BUILD_WITHOUT_PV),true)
 LOCAL_SHARED_LIBRARIES += \
 	libopencore_player    \
 	libopencore_author
 else
 LOCAL_CFLAGS += -DNO_OPENCORE
+endif
 endif
 
 # CFLAGS for StagefrightRecorder includes
