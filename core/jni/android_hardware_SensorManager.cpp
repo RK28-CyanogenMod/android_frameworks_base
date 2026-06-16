@@ -25,6 +25,8 @@
 #include "jni.h"
 #include "JNIHelp.h"
 
+#include <cutils/properties.h>
+
 
 namespace android {
 
@@ -40,6 +42,8 @@ struct SensorOffsets
     jfieldID    power;
     jfieldID    minDelay;
 } gSensorOffsets;
+
+static int gSensorFlags = 0;
 
 /*
  * The method below are not thread-safe and not intended to be
@@ -106,6 +110,43 @@ sensors_enable_sensor(JNIEnv *env, jclass clazz,
 {
     sp<SensorEventQueue> queue(reinterpret_cast<SensorEventQueue *>(nativeQueue));
     if (queue == 0) return JNI_FALSE;
+
+    char buf[PROPERTY_VALUE_MAX];
+
+    property_get("accelerometer.flip_xy", buf, "0");
+    int flip_xy = atoi(buf) != 0;
+
+    property_get("accelerometer.invert_x", buf, "0");
+    int invert_x = atoi(buf) != 0;
+
+    property_get("accelerometer.invert_y", buf, "0");
+    int invert_y = atoi(buf) != 0;
+
+    property_get("accelerometer.invert_z", buf, "0");
+    int invert_z = atoi(buf) != 0;
+
+    property_get("accelerometer.hwrotation", buf, "0");
+    int hwrotation = (atoi(buf) / 90) % 4;
+
+    if (hwrotation) {
+        if (hwrotation & 1) {
+            int tmp = invert_x;
+            invert_x = invert_y;
+            invert_y = tmp;
+            flip_xy ^= 1;
+        }
+        if (hwrotation == 2 || hwrotation > 2) {
+            invert_x ^= 1;
+            invert_y ^= 1;
+        }
+    }
+
+    gSensorFlags = 0;
+    if (flip_xy)  gSensorFlags |= 0x1;
+    if (invert_x) gSensorFlags |= 0x2;
+    if (invert_y) gSensorFlags |= 0x4;
+    if (invert_z) gSensorFlags |= 0x8;
+
     status_t res;
     if (delay >= 0) {
         res = queue->enableSensor(sensor, delay);
@@ -135,8 +176,25 @@ sensors_data_poll(JNIEnv *env, jclass clazz, jint nativeQueue,
     if (res < 0)
         return -1;
 
+    if (event.type == SENSOR_TYPE_ACCELEROMETER) {
+        if (gSensorFlags & 0x1) {
+            float temp = event.data[0];
+            event.data[0] = event.data[1];
+            event.data[1] = temp;
+        }
+        if (gSensorFlags & 0x2) {
+            event.data[0] *= -1;
+        }
+        if (gSensorFlags & 0x4) {
+            event.data[1] *= -1;
+        }
+        if (gSensorFlags & 0x8) {
+            event.data[2] *= -1;
+        }
+    }
+
     jint accuracy = event.vector.status;
-    env->SetFloatArrayRegion(values, 0, 3, event.vector.v);
+    env->SetFloatArrayRegion(values, 0, 3, event.data);
     env->SetIntArrayRegion(status, 0, 1, &accuracy);
     env->SetLongArrayRegion(timestamp, 0, 1, &event.timestamp);
 
