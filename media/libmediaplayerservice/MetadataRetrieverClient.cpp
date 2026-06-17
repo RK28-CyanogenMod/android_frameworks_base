@@ -109,16 +109,17 @@ static sp<MediaMetadataRetrieverBase> createRetriever(player_type playerType)
 #endif
         case STAGEFRIGHT_PLAYER:
         case FLAC_PLAYER:
+#ifndef NO_OPENCORE
+        // RK2818: PVMetadataRetriever::getMode() crashes with SIGBUS on
+        // corrupt/invalid MP3 metadata (MetadataDriver status=-4).
+        // StagefrightMetadataRetriever handles these files gracefully (returns
+        // NULL instead of crashing mediaserver). Use it for all player types.
+        case PV_PLAYER:
+#endif
         {
             p = new StagefrightMetadataRetriever;
             break;
         }
-#ifndef NO_OPENCORE
-        case PV_PLAYER:
-            LOGV("create pv metadata retriever");
-            p = new PVMetadataRetriever();
-            break;
-#endif
         case SONIVOX_PLAYER:
             LOGV("create midi metadata retriever");
             p = new MidiMetadataRetriever();
