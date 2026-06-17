@@ -72,6 +72,7 @@ private:
     FLAC__uint64         mTotalSamples;
     FLAC__uint64         mCurrentSample;
     uint32_t             mBytesPerSample;
+    uint32_t             mSrcBitsPerSample;
     uint32_t             mChannels;
     uint32_t             mSampleRate;
     uint32_t             mLengthInMsec;

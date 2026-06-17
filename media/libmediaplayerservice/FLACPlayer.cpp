@@ -55,7 +55,8 @@ static status_t STATE_OPEN = 2;
 
 FLACPlayer::FLACPlayer() :
     mTotalSamples(-1), mCurrentSample(0), mBytesPerSample(-1),
-    mChannels(-1), mSampleRate(-1), mAudioBuffer(NULL),
+    mSrcBitsPerSample(0), mChannels(-1), mSampleRate(-1),
+    mLengthInMsec(0), mAudioBuffer(NULL),
     mAudioBufferSize(0), mAudioBufferFilled(0),
     mState(STATE_ERROR), mStreamType(AudioSystem::MUSIC),
     mLoop(false), mAndroidLoop(false), mExit(false), mPaused(false),
@@ -162,6 +163,11 @@ status_t FLACPlayer::setdatasource(const char *path, int fd, int64_t offset, int
         return ERROR_OPEN_FAILED;
     }
 
+    // vp_metadata may have set STATE_ERROR (e.g. bits_per_sample == 0)
+    if (mState == STATE_ERROR) {
+        fclose(mFile);
+        return ERROR_OPEN_FAILED;
+    }
     mState = STATE_OPEN;
     return NO_ERROR;
 }
@@ -192,18 +198,20 @@ void FLACPlayer::vp_metadata(const FLAC__StreamDecoder *decoder, const FLAC__Str
 
     if (metadata->type == FLAC__METADATA_TYPE_STREAMINFO) {
         self->mTotalSamples = metadata->data.stream_info.total_samples;
-        self->mBytesPerSample = metadata->data.stream_info.bits_per_sample / 8;
+        self->mSrcBitsPerSample = metadata->data.stream_info.bits_per_sample;
         self->mChannels = metadata->data.stream_info.channels;
         self->mSampleRate = metadata->data.stream_info.sample_rate;
 
-        if (self->mBytesPerSample != 2) {
-            LOGE("Can only support 16 bits per sample; input is %d\n", self->mBytesPerSample * 8);
+        // We always output 16-bit PCM to AudioSink; FLAC decoder provides
+        // left-justified int32 samples. For >16-bit sources, we downscale
+        // in vp_write.
+        if (self->mSrcBitsPerSample == 0) {
+            LOGE("Invalid streaminfo: bits_per_sample == 0\n");
             self->mState = STATE_ERROR;
             return;
         }
 
-        self->mLengthInMsec = self->mTotalSamples / self->mSampleRate * 1000 +
-                              self->mTotalSamples % self->mSampleRate / ( self->mSampleRate / 1000 );
+        self->mLengthInMsec = (int)(self->mTotalSamples * 1000ULL / self->mSampleRate);
     } else if (metadata->type == FLAC__METADATA_TYPE_VORBIS_COMMENT) {
         for (unsigned int i = 0; i < metadata->data.vorbis_comment.num_comments; i++) {
             char *ptr = (char *)metadata->data.vorbis_comment.comments[i].entry;
@@ -393,10 +401,14 @@ status_t FLACPlayer::createOutputTrack() {
 FLAC__StreamDecoderWriteStatus FLACPlayer::vp_write(const FLAC__StreamDecoder *decoder, const FLAC__Frame *frame, const FLAC__int32 * const buffer[], void *client_data) {
     FLACPlayer *self = (FLACPlayer *)client_data;
 
-    const uint32_t bytes_per_sample = self->mBytesPerSample;
-    const uint32_t incr = bytes_per_sample * self->mChannels;
+    const uint32_t out_bps = 2;  // always output 16-bit PCM
+    const uint32_t incr = out_bps * self->mChannels;
     const uint32_t wide_samples = frame->header.blocksize;
     const uint32_t frame_size = incr * wide_samples;
+    const int src_bits = self->mSrcBitsPerSample;
+    // For >16-bit source, right-shift to convert to 16-bit with rounding
+    const int downshift = (src_bits > 16) ? (src_bits - 16) : 0;
+    const int round_val = (downshift > 0) ? (1 << (downshift - 1)) : 0;
 
     self->mCurrentSample = frame->header.number.sample_number;
 
@@ -412,21 +424,26 @@ FLAC__StreamDecoderWriteStatus FLACPlayer::vp_write(const FLAC__StreamDecoder *d
 
     FLAC__int8 *s8buffer = self->mAudioBuffer;
     FLAC__int16 *s16buffer = (FLAC__int16 *)s8buffer;
+    FLAC__int32 val;
 
-    // Interleave channel data like PCM
+    // Interleave channel data like PCM, downscaling to 16-bit if necessary
     if (self->mChannels == 2) {
         for (sample = wide_sample = 0; wide_sample < wide_samples; wide_sample++) {
-            s16buffer[sample++] = (FLAC__int16)(buffer[0][wide_sample]);
-            s16buffer[sample++] = (FLAC__int16)(buffer[1][wide_sample]);
+            val = buffer[0][wide_sample];
+            s16buffer[sample++] = (FLAC__int16)((downshift > 0) ? ((val + round_val) >> downshift) : val);
+            val = buffer[1][wide_sample];
+            s16buffer[sample++] = (FLAC__int16)((downshift > 0) ? ((val + round_val) >> downshift) : val);
         }
     } else if (self->mChannels == 1) {
         for (sample = wide_sample = 0; wide_sample < wide_samples; wide_sample++) {
-            s16buffer[sample++] = (FLAC__int16)(buffer[0][wide_sample]);
+            val = buffer[0][wide_sample];
+            s16buffer[sample++] = (FLAC__int16)((downshift > 0) ? ((val + round_val) >> downshift) : val);
         }
     } else {
         for (sample = wide_sample = 0; wide_sample < wide_samples; wide_sample++) {
             for (channel = 0; channel < self->mChannels; channel++, sample++) {
-                s16buffer[sample] = (FLAC__int16)(buffer[channel][wide_sample]);
+                val = buffer[channel][wide_sample];
+                s16buffer[sample] = (FLAC__int16)((downshift > 0) ? ((val + round_val) >> downshift) : val);
             }
         }
     }
