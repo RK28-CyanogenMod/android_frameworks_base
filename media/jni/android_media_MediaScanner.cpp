@@ -41,6 +41,78 @@
 
 using namespace android;
 
+static bool isValidUtf8(const char* bytes) {
+    if (bytes == NULL) return false;
+    const unsigned char* p = (const unsigned char*)bytes;
+    while (*p) {
+        unsigned char c = *p;
+        if (c < 0x80) {
+            p++;
+        } else if (c < 0xC0) {
+            return false;
+        } else if (c < 0xE0) {
+            if ((p[1] & 0xC0) != 0x80) return false;
+            p += 2;
+        } else if (c < 0xF0) {
+            if ((p[1] & 0xC0) != 0x80 || (p[2] & 0xC0) != 0x80) return false;
+            // reject overlong and surrogate pairs
+            if (c == 0xE0 && (p[1] & 0xE0) == 0x80) return false;
+            if (c == 0xED && (p[1] & 0xE0) == 0xA0) return false;
+            p += 3;
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
+static jstring safeNewStringUTF(JNIEnv* env, const char* bytes) {
+    if (bytes == NULL) return NULL;
+    if (isValidUtf8(bytes)) {
+        return env->NewStringUTF(bytes);
+    }
+    size_t len = strlen(bytes);
+    char* cleaned = (char*)malloc(len + 1);
+    if (!cleaned) return NULL;
+    const unsigned char* src = (const unsigned char*)bytes;
+    char* dst = cleaned;
+    while (*src) {
+        unsigned char c = *src;
+        if (c < 0x80) {
+            *dst++ = *src++;
+        } else if (c < 0xC0) {
+            *dst++ = '?';
+            src++;
+        } else if (c < 0xE0) {
+            if ((src[1] & 0xC0) == 0x80 && !(c == 0xC0 || c == 0xC1)) {
+                *dst++ = *src++;
+                *dst++ = *src++;
+            } else {
+                *dst++ = '?';
+                src++;
+            }
+        } else if (c < 0xF0) {
+            if ((src[1] & 0xC0) == 0x80 && (src[2] & 0xC0) == 0x80
+                    && !(c == 0xE0 && (src[1] & 0xE0) == 0x80)
+                    && !(c == 0xED && (src[1] & 0xE0) == 0xA0)) {
+                *dst++ = *src++;
+                *dst++ = *src++;
+                *dst++ = *src++;
+            } else {
+                *dst++ = '?';
+                src++;
+            }
+        } else {
+            *dst++ = '?';
+            src++;
+        }
+    }
+    *dst = 0;
+    jstring result = env->NewStringUTF(cleaned);
+    free(cleaned);
+    return result;
+}
+
 // ----------------------------------------------------------------------------
 
 struct fields_t {
@@ -85,7 +157,7 @@ public:
     virtual bool scanFile(const char* path, long long lastModified, long long fileSize)
     {
         jstring pathStr;
-        if ((pathStr = mEnv->NewStringUTF(path)) == NULL) return false;
+        if ((pathStr = safeNewStringUTF(mEnv, path)) == NULL) return false;
 
         mEnv->CallVoidMethod(mClient, mScanFileMethodID, pathStr, lastModified, fileSize);
 
@@ -97,8 +169,8 @@ public:
     virtual bool handleStringTag(const char* name, const char* value)
     {
         jstring nameStr, valueStr;
-        if ((nameStr = mEnv->NewStringUTF(name)) == NULL) return false;
-        if ((valueStr = mEnv->NewStringUTF(value)) == NULL) return false;
+        if ((nameStr = safeNewStringUTF(mEnv, name)) == NULL) return false;
+        if ((valueStr = safeNewStringUTF(mEnv, value)) == NULL) return false;
 
         mEnv->CallVoidMethod(mClient, mHandleStringTagMethodID, nameStr, valueStr);
 
@@ -111,7 +183,7 @@ public:
     virtual bool setMimeType(const char* mimeType)
     {
         jstring mimeTypeStr;
-        if ((mimeTypeStr = mEnv->NewStringUTF(mimeType)) == NULL) return false;
+        if ((mimeTypeStr = safeNewStringUTF(mEnv, mimeType)) == NULL) return false;
 
         mEnv->CallVoidMethod(mClient, mSetMimeTypeMethodID, mimeTypeStr);
 
@@ -123,7 +195,7 @@ public:
     virtual bool addNoMediaFolder(const char* path)
     {
         jstring pathStr;
-        if ((pathStr = mEnv->NewStringUTF(path)) == NULL) return false;
+        if ((pathStr = safeNewStringUTF(mEnv, path)) == NULL) return false;
 
         mEnv->CallVoidMethod(mClient, mAddNoMediaFolderMethodID, pathStr);
 
