@@ -314,6 +314,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     boolean mSafeMode;
     WindowState mStatusBar = null;
     boolean mStatusBarCanHide;
+
+    private static final String TOUCH_CALIBRATION_PACKAGE =
+            "com.rockchip.tscalibration";
     int mStatusBarHeight;
     final ArrayList<WindowState> mStatusBarPanels = new ArrayList<WindowState>();
     WindowState mNavigationBar = null;
@@ -2614,6 +2617,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         return 0;
     }
 
+    private boolean isTouchCalibrationWindow(WindowManager.LayoutParams attrs) {
+        return attrs != null && TOUCH_CALIBRATION_PACKAGE.equals(attrs.packageName);
+    }
+
     /** {@inheritDoc} */
     public void beginAnimationLw(int displayWidth, int displayHeight) {
         mTopFullscreenOpaqueWindowState = null;
@@ -2683,7 +2690,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 // has the FLAG_FULLSCREEN set.  Not sure if there is another way that to be the
                 // case though.
                 if (topIsFullscreen) {
-                    if (mStatusBarCanHide ||
+                    if (mStatusBarCanHide || isTouchCalibrationWindow(lp) ||
                         (((mFocusedWindow != null) && (mFocusedWindow.getSystemUiVisibility() & View.SYSTEM_UI_FLAG_LOW_PROFILE) == 1) &&
                          (Settings.System.getInt(mContext.getContentResolver(),
                                                  Settings.System.COMBINED_BAR_AUTO_HIDE, 0) == 1))) {
