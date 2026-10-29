@@ -2370,6 +2370,11 @@ status_t SurfaceFlinger::electronBeamOnAnimationImplLocked()
 
 status_t SurfaceFlinger::turnElectronBeamOffImplLocked(int32_t mode)
 {
+#ifdef HAS_LIMITED_EGL
+    // RK2818 EGL cannot safely run the FBO-based CRT animation.
+    (void) mode;
+    return NO_ERROR;
+#else
     DisplayHardware& hw(graphicPlane(0).editDisplayHardware());
     if (!hw.canDraw()) {
         // we're already off
@@ -2393,6 +2398,7 @@ status_t SurfaceFlinger::turnElectronBeamOffImplLocked(int32_t mode)
     hw.flip( Region(hw.bounds()) );
 
     return NO_ERROR;
+#endif
 }
 
 status_t SurfaceFlinger::turnElectronBeamOff(int32_t mode)
@@ -2423,7 +2429,7 @@ status_t SurfaceFlinger::turnElectronBeamOff(int32_t mode)
         // work-around: when the power-manager calls us we activate the
         // animation. eventually, the "on" animation will be called
         // by the power-manager itself
-        mElectronBeamAnimationMode = mode;
+        // mElectronBeamAnimationMode = mode;
     }
     return res;
 }
@@ -2432,6 +2438,10 @@ status_t SurfaceFlinger::turnElectronBeamOff(int32_t mode)
 
 status_t SurfaceFlinger::turnElectronBeamOnImplLocked(int32_t mode)
 {
+#ifdef HAS_LIMITED_EGL
+    (void) mode;
+    return NO_ERROR;
+#else
     DisplayHardware& hw(graphicPlane(0).editDisplayHardware());
     if (hw.canDraw()) {
         // we're already on
@@ -2446,6 +2456,7 @@ status_t SurfaceFlinger::turnElectronBeamOnImplLocked(int32_t mode)
     signalEvent();
 
     return NO_ERROR;
+#endif
 }
 
 status_t SurfaceFlinger::turnElectronBeamOn(int32_t mode)
