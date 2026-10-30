@@ -39,6 +39,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
 #ifndef INT32_MAX
 #define INT32_MAX ((int32_t)(2147483647))
@@ -755,7 +756,12 @@ status_t Parcel::writeBlob(size_t len, WritableBlob* outBlob)
     }
 
     LOGV("writeBlob: write to ashmem");
-    int fd = ashmem_create_region("Parcel Blob", len);
+    // Older ashmem drivers reject sizes that are not page aligned. Keep the
+    // wire payload length unchanged; only round up the backing allocation.
+    const size_t pageMask = getpagesize() - 1;
+    if (len > size_t(-1) - pageMask) return BAD_VALUE;
+    const size_t ashmemSize = (len + pageMask) & ~pageMask;
+    int fd = ashmem_create_region("Parcel Blob", ashmemSize);
     if (fd < 0) return NO_MEMORY;
 
     int result = ashmem_set_prot_region(fd, PROT_READ | PROT_WRITE);
