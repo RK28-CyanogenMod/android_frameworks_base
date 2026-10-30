@@ -5708,6 +5708,12 @@ public final class BatteryStatsImpl extends BatteryStats {
     private NetworkStats mNetworkSummaryCache;
     private NetworkStats mNetworkDetailCache;
 
+    // This kernel has no /proc/net/xt_qtaguid/stats.  Reading it fails on every
+    // unplug; a Log.wtf() there makes ActivityManager write a dropbox entry,
+    // whose sendBroadcast deadlocks against the battery stats lock (the
+    // watchdog eventually kills system_server).  Warn once instead.
+    private static boolean sNetworkStatsUnavailable;
+
     private NetworkStats getNetworkStatsSummary() {
         // NOTE: calls from BatteryStatsService already hold this lock
         synchronized (this) {
@@ -5717,7 +5723,10 @@ public final class BatteryStatsImpl extends BatteryStats {
                     mNetworkSummaryCache = mNetworkStatsFactory.readNetworkStatsSummary();
                 } catch (IllegalStateException e) {
                     // log problem and return empty object
-                    Log.wtf(TAG, "problem reading network stats", e);
+                    if (!sNetworkStatsUnavailable) {
+                        sNetworkStatsUnavailable = true;
+                        Log.w(TAG, "network stats unavailable, reporting empty: " + e);
+                    }
                     mNetworkSummaryCache = new NetworkStats(SystemClock.elapsedRealtime(), 0);
                 }
             }
@@ -5735,7 +5744,10 @@ public final class BatteryStatsImpl extends BatteryStats {
                             .readNetworkStatsDetail().groupedByUid();
                 } catch (IllegalStateException e) {
                     // log problem and return empty object
-                    Log.wtf(TAG, "problem reading network stats", e);
+                    if (!sNetworkStatsUnavailable) {
+                        sNetworkStatsUnavailable = true;
+                        Log.w(TAG, "network stats unavailable, reporting empty: " + e);
+                    }
                     mNetworkDetailCache = new NetworkStats(SystemClock.elapsedRealtime(), 0);
                 }
             }
