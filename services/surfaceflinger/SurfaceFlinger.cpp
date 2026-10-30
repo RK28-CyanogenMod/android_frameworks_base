@@ -28,6 +28,9 @@
 
 #include <cutils/log.h>
 #include <cutils/properties.h>
+#ifdef RK28_OPENCORE_PLAYER
+#include <dlfcn.h>
+#endif
 
 #include <binder/IPCThreadState.h>
 #include <binder/IServiceManager.h>
@@ -2485,6 +2488,33 @@ status_t SurfaceFlinger::turnElectronBeamOn(int32_t mode)
 
 // ---------------------------------------------------------------------------
 
+#ifdef RK28_OPENCORE_PLAYER
+// Bind only PixelFlinger's software color/read buffers. eglMakeCurrent must
+// not be used here: its window disconnect queues an unfinished display buffer.
+class ScopedSoftwareCapture {
+    void* mSaved;
+    void (*mRestore)(void*);
+public:
+    ScopedSoftwareCapture() : mSaved(NULL), mRestore(NULL) { }
+    bool bind(uint32_t width, uint32_t height) {
+        if (!strstr(GLExtensions::getInstance().getRenderer(), "PixelFlinger")) return false;
+        static void* driver = dlopen("/system/lib/egl/libGLES_android.so", RTLD_NOW);
+        if (!driver) return false;
+        typedef void* (*Bind)(uint32_t, uint32_t);
+        Bind bind = reinterpret_cast<Bind>(dlsym(driver, "rk28_begin_capture"));
+        mRestore = reinterpret_cast<void (*)(void*)>(dlsym(driver, "rk28_end_capture"));
+        if (!bind || !mRestore) return false;
+        mSaved = bind(width, height);
+        return mSaved != NULL;
+    }
+    ~ScopedSoftwareCapture() {
+        if (mSaved) {
+            mRestore(mSaved);
+        }
+    }
+};
+#endif
+
 status_t SurfaceFlinger::captureScreenImplLocked(DisplayID dpy,
         sp<IMemoryHeap>* heap,
         uint32_t* w, uint32_t* h, PixelFormat* f,
@@ -2497,8 +2527,10 @@ status_t SurfaceFlinger::captureScreenImplLocked(DisplayID dpy,
     if (UNLIKELY(uint32_t(dpy) >= DISPLAY_COUNT))
         return BAD_VALUE;
 
+#ifndef RK28_OPENCORE_PLAYER
     if (!GLExtensions::getInstance().haveFramebufferObject())
         return INVALID_OPERATION;
+#endif
 
     // get screen geometry
     const DisplayHardware& hw(graphicPlane(dpy).displayHardware());
@@ -2518,17 +2550,36 @@ status_t SurfaceFlinger::captureScreenImplLocked(DisplayID dpy,
     // make sure to clear all GL error flags
     while ( glGetError() != GL_NO_ERROR ) ;
 
-    // create a FBO
-    GLuint name, tname;
-    glGenRenderbuffersOES(1, &tname);
-    glBindRenderbufferOES(GL_RENDERBUFFER_OES, tname);
-    glRenderbufferStorageOES(GL_RENDERBUFFER_OES, GL_RGBA8_OES, sw, sh);
-    glGenFramebuffersOES(1, &name);
-    glBindFramebufferOES(GL_FRAMEBUFFER_OES, name);
-    glFramebufferRenderbufferOES(GL_FRAMEBUFFER_OES,
-            GL_COLOR_ATTACHMENT0_OES, GL_RENDERBUFFER_OES, tname);
+    // PixelFlinger has no FBO extension. Use a private software render target
+    // while retaining the compositor context and normal layer/Z filtering.
+    const bool haveFbo = GLExtensions::getInstance().haveFramebufferObject();
+    GLenum status = GL_FRAMEBUFFER_COMPLETE_OES;
+#ifdef RK28_OPENCORE_PLAYER
+    ScopedSoftwareCapture softwareCapture;
+    if (!haveFbo) {
+        if (!softwareCapture.bind(sw, sh)) {
+            LOGW("Software capture target unavailable");
+            return INVALID_OPERATION;
+        }
+        static bool loggedSoftwareCapture = false;
+        if (!loggedSoftwareCapture) {
+            LOGI("Software screen capture via PixelFlinger target (%ux%u)", sw, sh);
+            loggedSoftwareCapture = true;
+        }
+    }
+#endif
+    GLuint name = 0, tname = 0;
+    if (haveFbo) {
+        glGenRenderbuffersOES(1, &tname);
+        glBindRenderbufferOES(GL_RENDERBUFFER_OES, tname);
+        glRenderbufferStorageOES(GL_RENDERBUFFER_OES, GL_RGBA8_OES, sw, sh);
+        glGenFramebuffersOES(1, &name);
+        glBindFramebufferOES(GL_FRAMEBUFFER_OES, name);
+        glFramebufferRenderbufferOES(GL_FRAMEBUFFER_OES,
+                GL_COLOR_ATTACHMENT0_OES, GL_RENDERBUFFER_OES, tname);
 
-    GLenum status = glCheckFramebufferStatusOES(GL_FRAMEBUFFER_OES);
+        status = glCheckFramebufferStatusOES(GL_FRAMEBUFFER_OES);
+    }
 
     if (status == GL_FRAMEBUFFER_COMPLETE_OES) {
 
@@ -2601,10 +2652,12 @@ status_t SurfaceFlinger::captureScreenImplLocked(DisplayID dpy,
         result = BAD_VALUE;
     }
 
-    // release FBO resources
-    glBindFramebufferOES(GL_FRAMEBUFFER_OES, 0);
-    glDeleteRenderbuffersOES(1, &tname);
-    glDeleteFramebuffersOES(1, &name);
+    if (haveFbo) {
+        glBindFramebufferOES(GL_FRAMEBUFFER_OES, 0);
+        glDeleteRenderbuffersOES(1, &tname);
+        glDeleteFramebuffersOES(1, &name);
+    }
+    // The software-capture scope restores the original rasterizer buffers.
 
 #ifdef STE_HARDWARE
     hw.compositionComplete();
@@ -2626,8 +2679,10 @@ status_t SurfaceFlinger::captureScreen(DisplayID dpy,
     if (UNLIKELY(uint32_t(dpy) >= DISPLAY_COUNT))
         return BAD_VALUE;
 
+#ifndef RK28_OPENCORE_PLAYER
     if (!GLExtensions::getInstance().haveFramebufferObject())
         return INVALID_OPERATION;
+#endif
 
     class MessageCaptureScreen : public MessageBase {
         SurfaceFlinger* flinger;

@@ -49,6 +49,10 @@ ifeq ($(TARGET_HAVE_TEGRA_ERRATA_657451),true)
 endif
 LOCAL_C_INCLUDES += bionic/libc/private
 
+ifeq ($(BOARD_USES_RK28_OPENCORE),true)
+LOCAL_SRC_FILES += capture.cpp
+endif
+
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/egl
 LOCAL_MODULE:= libGLES_android
 
