@@ -539,6 +539,16 @@ void MediaPlayerService::Client::disconnect()
     IPCThreadState::self()->flushCommands();
 }
 
+#ifdef RK28_OPENCORE_PLAYER
+MediaPlayerBase* createRK28PVPlayer();
+
+static bool useRK28PVPlayer() {
+    char value[PROPERTY_VALUE_MAX];
+    property_get("media.rk28.pvplayer", value, "1");
+    return strcmp(value, "0") != 0;
+}
+#endif
+
 static player_type getDefaultPlayerType() {
     return STAGEFRIGHT_PLAYER;
 }
@@ -555,6 +565,23 @@ player_type getPlayerType(int fd, int64_t offset, int64_t length)
     // Ogg vorbis?
     if (ident == 0x5367674f) // 'OggS'
         return STAGEFRIGHT_PLAYER;
+
+#ifdef RK28_OPENCORE_PLAYER
+    // Route local video containers to the vendor DSP player. Music and
+    // streaming retain their existing Stagefright/NuPlayer backends.
+    if (useRK28PVPlayer()) {
+        unsigned char header[16] = {0};
+        ssize_t count = pread(fd, header, sizeof(header), offset);
+        if ((count >= 8 && !memcmp(header + 4, "ftyp", 4))
+                || (count >= 12 && !memcmp(header, "RIFF", 4)
+                    && !memcmp(header + 8, "AVI ", 4))
+                || (count >= 4 && (!memcmp(header, "\x1a\x45\xdf\xa3", 4)
+                    || !memcmp(header, "FLV", 3) || !memcmp(header, ".RMF", 4)
+                    || !memcmp(header, "\x30\x26\xb2\x75", 4)))) {
+            return PV_PLAYER;
+        }
+    }
+#endif
 
     // Some kind of MIDI?
     EAS_DATA_HANDLE easdata;
@@ -610,6 +637,16 @@ player_type getPlayerType(const char* url)
         }
     }
 
+#ifdef RK28_OPENCORE_PLAYER
+    if (useRK28PVPlayer() && (!strncmp(url, "/", 1) || !strncmp(url, "file://", 7))) {
+        const char *dot = strrchr(url, '.');
+        static const char *exts[] = {".mp4", ".m4v", ".3gp", ".avi",
+                                    ".mkv", ".flv", ".rm", ".rmvb", ".wmv", ".asf"};
+        for (size_t i = 0; dot != NULL && i < NELEM(exts); ++i)
+            if (!strcasecmp(dot, exts[i])) return PV_PLAYER;
+    }
+#endif
+
     return getDefaultPlayerType();
 }
 
@@ -618,6 +655,12 @@ static sp<MediaPlayerBase> createPlayer(player_type playerType, void* cookie,
 {
     sp<MediaPlayerBase> p;
     switch (playerType) {
+#ifdef RK28_OPENCORE_PLAYER
+        case PV_PLAYER:
+            LOGI("Create RK2818 OpenCORE DSP player");
+            p = createRK28PVPlayer();
+            break;
+#endif
         case SONIVOX_PLAYER:
             LOGV(" create MidiFile");
             p = new MidiFile();
