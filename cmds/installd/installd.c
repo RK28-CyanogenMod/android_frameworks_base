@@ -526,7 +526,7 @@ static void drop_privileges() {
     capdata[0].inheritable = 0;
     capdata[1].inheritable = 0;
 
-    if (capset(&capheader, &capdata[0]) < 0) {
+    if (capset_legacy_compatible(&capheader, &capdata[0]) < 0) {
         ALOGE("capset failed: %s\n", strerror(errno));
         exit(1);
     }

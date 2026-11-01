@@ -769,7 +769,7 @@ int dexopt(const char *apk_path, uid_t uid, int is_public)
         memset(&capheader, 0, sizeof(capheader));
         memset(&capdata, 0, sizeof(capdata));
         capheader.version = _LINUX_CAPABILITY_VERSION_3;
-        if (capset(&capheader, &capdata[0]) < 0) {
+        if (capset_legacy_compatible(&capheader, &capdata[0]) < 0) {
             ALOGE("capset failed: %s\n", strerror(errno));
             exit(66);
         }

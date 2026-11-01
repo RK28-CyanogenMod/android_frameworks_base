@@ -31,6 +31,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <linux/capability.h>
 
 #include <cutils/fs.h>
 #include <cutils/sockets.h>
@@ -45,6 +46,22 @@
 #else
 #include <sys/statfs.h>
 #endif
+
+// Capability ABI v3 was introduced in 2.6.26. RK28's 2.6.25 kernel
+// supports v2, whose process capability payload has the same two-word layout.
+// Retry only the version mismatch; preserve all requested capability masks.
+static inline int capset_legacy_compatible(struct __user_cap_header_struct *header,
+        struct __user_cap_data_struct *data) {
+    const unsigned requestedVersion = header->version;
+    int result = capset(header, data);
+    // Old kernels may already overwrite header->version when reporting EINVAL.
+    if (result < 0 && errno == EINVAL
+            && requestedVersion == _LINUX_CAPABILITY_VERSION_3) {
+        header->version = _LINUX_CAPABILITY_VERSION_2;
+        result = capset(header, data);
+    }
+    return result;
+}
 
 #define SOCKET_PATH "installd"
 
