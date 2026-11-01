@@ -22,6 +22,7 @@ import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.content.Context;
 import android.graphics.Rect;
+import android.os.SystemProperties;
 import android.util.AttributeSet;
 import android.util.Slog;
 import android.view.Gravity;
@@ -50,6 +51,10 @@ public class NotificationPanel extends RelativeLayout implements StatusBarPanel,
 
     final static int PANEL_FADE_DURATION = 150;
 
+    // PixelFlinger cannot animate panel alpha reliably on this software-only board.
+    // Keep the normal animations for devices with hardware acceleration.
+    final boolean mUsePanelAnimations;
+
     boolean mShowing;
     boolean mHasClearableNotifications = false;
     int mNotificationCount = 0;
@@ -77,6 +82,7 @@ public class NotificationPanel extends RelativeLayout implements StatusBarPanel,
 
     public NotificationPanel(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
+        mUsePanelAnimations = !SystemProperties.getBoolean("ro.config.disable_hw_accel", false);
     }
 
     public void setBar(TabletStatusBar b) {
@@ -130,6 +136,7 @@ public class NotificationPanel extends RelativeLayout implements StatusBarPanel,
     }
 
     public void show(boolean show, boolean animate) {
+        animate &= mUsePanelAnimations;
         if (animate) {
             if (mShowing != show) {
                 mShowing = show;
@@ -145,6 +152,9 @@ public class NotificationPanel extends RelativeLayout implements StatusBarPanel,
             }
         } else {
             mShowing = show;
+            mContentParent.setLayerType(View.LAYER_TYPE_NONE, null);
+            mContentParent.setAlpha(1f);
+            mContentParent.setTranslationY(0f);
             setVisibility(show ? View.VISIBLE : View.GONE);
         }
     }
@@ -259,6 +269,16 @@ public class NotificationPanel extends RelativeLayout implements StatusBarPanel,
         } else {
             toShow = mNotificationScroller;
             toHide = mSettingsView;
+        }
+        if (!mUsePanelAnimations) {
+            toHide.setVisibility(View.GONE);
+            toHide.setAlpha(1f);
+            toShow.setAlpha(1f);
+            toShow.setVisibility(View.VISIBLE);
+            if (toHide == mSettingsView) removeSettingsView();
+            updateClearButton();
+            updatePanelModeButtons();
+            return;
         }
         Animator a = ObjectAnimator.ofFloat(toHide, "alpha", 1f, 0f)
                 .setDuration(PANEL_FADE_DURATION);
