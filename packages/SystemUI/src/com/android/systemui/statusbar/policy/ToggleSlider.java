@@ -140,6 +140,17 @@ public class ToggleSlider extends RelativeLayout
         return mToggle.isChecked();
     }
 
+    public void hideToggle() {
+        mToggle.setEnabled(false);
+        mToggle.setVisibility(View.GONE);
+        mLabel.setVisibility(View.GONE);
+        RelativeLayout.LayoutParams params =
+                (RelativeLayout.LayoutParams) mSlider.getLayoutParams();
+        params.addRule(RelativeLayout.RIGHT_OF, 0);
+        params.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
+        mSlider.setLayoutParams(params);
+    }
+
     public void setMax(int max) {
         mSlider.setMax(max);
     }

@@ -89,7 +89,7 @@ public class BrightnessController implements ToggleSlider.Listener {
         } else {
             control.setChecked(false);
             updateIcon(false /*automatic*/);
-            //control.hideToggle();
+            control.hideToggle();
         }
         
         int value;
@@ -106,6 +106,7 @@ public class BrightnessController implements ToggleSlider.Listener {
     }
 
     public void onChanged(ToggleSlider view, boolean tracking, boolean automatic, int value) {
+        automatic = mAutomaticAvailable && automatic;
         setMode(automatic ? Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
                 : Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL);
         updateIcon(automatic);
