@@ -1273,7 +1273,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         // SystemUI (status bar) layout policy
         int shortSizeDp = shortSize * DisplayMetrics.DENSITY_DEFAULT / density;
 
-        if (shortSizeDp < 600) {
+        if (SystemProperties.getBoolean("ro.rk28.tablet_ui", false)) {
+            mHasSystemNavBar = true;
+            mNavigationBarCanMove = false;
+        } else if (shortSizeDp < 600) {
             // 0-599dp: "phone" UI with a separate status & navigation bar
             mHasSystemNavBar = false;
             mNavigationBarCanMove = true;
