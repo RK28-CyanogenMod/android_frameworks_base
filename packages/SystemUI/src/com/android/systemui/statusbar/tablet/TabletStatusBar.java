@@ -270,6 +270,8 @@ public class TabletStatusBar extends BaseStatusBar implements
         mBatteryController.addIconView((ImageView)mNotificationPanel.findViewById(R.id.battery));
         mBatteryController.addLabelView(
                 (TextView)mNotificationPanel.findViewById(R.id.battery_text));
+        mBatteryController.addStateChangedCallback(
+                (CircleBattery)mNotificationPanel.findViewById(R.id.panel_circle_battery));
 
         // Bt
         mBluetoothController.addIconView(
@@ -565,7 +567,7 @@ public class TabletStatusBar extends BaseStatusBar implements
         mBatteryController.addIconView((ImageView)sb.findViewById(R.id.battery));
 
         final CircleBattery circleBattery =
-                (CircleBattery) sb.findViewById(R.id.circle_battery);
+                (CircleBattery) sb.findViewById(R.id.dock_circle_battery);
         mBatteryController.addStateChangedCallback(circleBattery);
 
         mBluetoothController = new BluetoothController(mContext);
