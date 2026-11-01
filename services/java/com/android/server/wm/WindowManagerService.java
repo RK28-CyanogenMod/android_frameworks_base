@@ -10231,7 +10231,8 @@ public class WindowManagerService extends IWindowManager.Stub
             Debug.startMethodTracing(file.toString(), 8 * 1024 * 1024);
         }
 
-        if (CUSTOM_SCREEN_ROTATION) {
+        if (CUSTOM_SCREEN_ROTATION
+                && !SystemProperties.getBoolean("ro.rk28.no_rotation_anim", false)) {
             final DisplayContent displayContent = getDefaultDisplayContentLocked();
             final int displayId = displayContent.getDisplayId();
             ScreenRotationAnimation screenRotationAnimation =
