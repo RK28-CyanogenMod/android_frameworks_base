@@ -49,6 +49,19 @@ public class NotificationPanelTitle extends RelativeLayout implements View.OnCli
         super.onFinishInflate();
         buttons.add(mSettingsButton = findViewById(R.id.settings_button));
         buttons.add(findViewById(R.id.notification_button));
+
+        // Match the ICS tablet header: the whole title switches between
+        // notifications and quick settings. Clock/DateView shortcuts must
+        // not consume these taps; the clear-all button remains independent.
+        for (int id : new int[] { R.id.clock, R.id.date }) {
+            View label = findViewById(id);
+            if (label != null) {
+                label.setOnClickListener(null);
+                label.setOnLongClickListener(null);
+                label.setClickable(false);
+                label.setLongClickable(false);
+            }
+        }
     }
 
     @Override

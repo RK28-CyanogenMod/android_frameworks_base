@@ -42,7 +42,7 @@ import java.util.Date;
 public class DateView extends TextView implements OnClickListener, OnLongClickListener {
     private static final String TAG = "DateView";
 
-    private RelativeLayout mParent;
+    private View mParent;
 
     private boolean mAttachedToWindow;
     private boolean mWindowVisible;
@@ -87,8 +87,11 @@ public class DateView extends TextView implements OnClickListener, OnLongClickLi
 
     @Override
     protected void onDraw(Canvas canvas) {
-        if (mParent == null) {
-            mParent = (RelativeLayout) getParent();
+        final ViewParent parent = getParent();
+        if (mParent == null && parent instanceof RelativeLayout) {
+            // Only the phone header opens Calendar. The tablet title owns
+            // its touch area so tapping the date can switch panel contents.
+            mParent = (View) parent;
             mParent.setOnClickListener(this);
             mParent.setOnLongClickListener(this);
         }
