@@ -2898,15 +2898,19 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         if (isDefaultDisplay) {
             // For purposes of putting out fake window up to steal focus, we will
             // drive nav being hidden only by whether it is requested.
-            boolean navVisible = (mLastSystemUiFlags&View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) == 0;
-            int navWidth = mNavigationBarWidthForRotation[displayRotation];
-            int navHeight = mNavigationBarHeightForRotation[displayRotation];
+            final boolean calibrating = mFocusedWindow != null
+                    && "com.rockchip.tscalibration".equals(
+                            mFocusedWindow.getAttrs().packageName);
+            boolean navVisible = !calibrating
+                    && (mLastSystemUiFlags&View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) == 0;
+            int navWidth = calibrating ? 0 : mNavigationBarWidthForRotation[displayRotation];
+            int navHeight = calibrating ? 0 : mNavigationBarHeightForRotation[displayRotation];
 
             // When the navigation bar isn't visible, we put up a fake
             // input window to catch all touch events.  This way we can
             // detect when the user presses anywhere to bring back the nav
             // bar and ensure the application doesn't see the event.
-            if (navVisible) {
+            if (navVisible || calibrating) {
                 if (mHideNavFakeWindow != null) {
                     mHideNavFakeWindow.dismiss();
                     mHideNavFakeWindow = null;
@@ -2926,7 +2930,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 navVisible = false;
                 navWidth = 0;
                 navHeight = 0;
-            } else if (!mCanHideNavigationBar) {
+            } else if (!mCanHideNavigationBar && !calibrating) {
                 navVisible = true;
             }
 
