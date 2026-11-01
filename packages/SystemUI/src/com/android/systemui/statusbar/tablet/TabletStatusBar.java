@@ -41,6 +41,7 @@ import android.os.IBinder;
 import android.os.Message;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.os.storage.StorageManager;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Pair;
@@ -399,6 +400,12 @@ public class TabletStatusBar extends BaseStatusBar implements
     @Override
     public void start() {
         super.start(); // will add the main bar view
+
+        // The phone bar registers this in PhoneStatusBarPolicy. Tablet mode
+        // has no such policy, but still needs UMS and removable-media notices.
+        StorageManager storage = (StorageManager)
+                mContext.getSystemService(Context.STORAGE_SERVICE);
+        storage.registerListener(new com.android.systemui.usb.StorageNotification(mContext));
     }
 
     private static void copyNotifications(ArrayList<Pair<IBinder, StatusBarNotification>> dest,

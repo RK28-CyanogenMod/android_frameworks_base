@@ -92,8 +92,28 @@ public class UsbStorageActivity extends Activity
     private StorageEventListener mStorageListener = new StorageEventListener() {
         @Override
         public void onStorageStateChanged(String path, String oldState, String newState) {
-            final boolean on = newState.equals(Environment.MEDIA_SHARED);
-            switchDisplay(on);
+            // NAND and SD may change state separately; use the aggregate UMS
+            // state instead of letting the last volume overwrite the display.
+            mAsyncStorageHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    switchDisplay(mStorageManager.isUsbMassStorageEnabled());
+                }
+            });
+        }
+
+        @Override
+        public void onUsbMassStorageConnectionChanged(final boolean connected) {
+            // Legacy gadget kernels report cable state through MountService,
+            // without UsbManager.ACTION_USB_STATE.
+            if (!connected) {
+                mUIHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!mDestroyed) finish();
+                    }
+                });
+            }
         }
     };
     

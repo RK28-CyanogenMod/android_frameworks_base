@@ -45,6 +45,7 @@ import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.SystemProperties;
 import android.os.UserHandle;
+import android.os.UEventObserver;
 import android.os.storage.IMountService;
 import android.os.storage.IMountServiceListener;
 import android.os.storage.IMountShutdownObserver;
@@ -71,7 +72,9 @@ import com.google.android.collect.Maps;
 
 import org.xmlpull.v1.XmlPullParserException;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -197,6 +200,12 @@ class MountService extends IMountService.Stub
     private PackageManagerService                 mPms;
     private boolean                               mUmsEnabling;
     private boolean                               mUmsAvailable = false;
+    // Legacy RK28 kernels expose the USB cable through power_supply, without
+    // an android_usb gadget and its ACTION_USB_STATE broadcasts.
+    private final boolean mUmsFromBattery =
+            !new File("/sys/class/android_usb").exists();
+    private boolean mUsbPlugged;
+
     // Used as a lock for methods that register/unregister listeners.
     final private ArrayList<MountServiceBinderListener> mListeners =
             new ArrayList<MountServiceBinderListener>();
@@ -563,6 +572,9 @@ class MountService extends IMountService.Stub
             sendUmsIntent(true);
             mSendUmsConnectedOnBoot = false;
         }
+        if (mUmsFromBattery) {
+            mHandler.post(mUsbStateCheck);
+        }
     }
 
     private final BroadcastReceiver mUserReceiver = new BroadcastReceiver() {
@@ -594,12 +606,64 @@ class MountService extends IMountService.Stub
         }
     };
 
+    private boolean readUsbOnline() {
+        BufferedReader reader = null;
+        try {
+            reader = new BufferedReader(
+                    new FileReader("/sys/class/power_supply/usb/online"));
+            String line = reader.readLine();
+            return line != null && line.trim().startsWith("1");
+        } catch (IOException e) {
+            return false;
+        } finally {
+            if (reader != null) {
+                try {
+                    reader.close();
+                } catch (IOException ignored) {
+                }
+            }
+        }
+    }
+
+    private boolean umsVolumeStatesKnown() {
+        for (String path : getShareableVolumes()) {
+            if (getVolumeState(path) == null) return false;
+        }
+        return true;
+    }
+
+    // Runs on the MountService handler, after the initial vold mount pass.
+    private final Runnable mUsbStateCheck = new Runnable() {
+        @Override
+        public void run() {
+            if (!mSystemReady || !umsVolumeStatesKnown()) return;
+            final boolean usb = readUsbOnline();
+            if (usb != mUsbPlugged) {
+                mUsbPlugged = usb;
+                Slog.i(TAG, "USB " + (usb ? "connected" : "disconnected")
+                        + " (power supply)");
+                notifyShareAvailabilityChange(usb);
+            }
+        }
+    };
+
+    private final UEventObserver mUsbObserver = new UEventObserver() {
+        @Override
+        public void onUEvent(UEventObserver.UEvent event) {
+            if (mHandler != null) mHandler.post(mUsbStateCheck);
+        }
+    };
+
     private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            boolean available = (intent.getBooleanExtra(UsbManager.USB_CONNECTED, false) &&
-                    intent.getBooleanExtra(UsbManager.USB_FUNCTION_MASS_STORAGE, false));
-            notifyShareAvailabilityChange(available);
+            if (mUmsFromBattery) {
+                mHandler.post(mUsbStateCheck);
+            } else {
+                boolean available = (intent.getBooleanExtra(UsbManager.USB_CONNECTED, false) &&
+                        intent.getBooleanExtra(UsbManager.USB_FUNCTION_MASS_STORAGE, false));
+                notifyShareAvailabilityChange(available);
+            }
         }
     };
 
@@ -1313,8 +1377,12 @@ class MountService extends IMountService.Stub
         // Watch for USB changes on primary volume
         final StorageVolume primary = getPrimaryPhysicalVolume();
         if (primary != null && primary.allowMassStorage()) {
-            mContext.registerReceiver(
-                    mUsbReceiver, new IntentFilter(UsbManager.ACTION_USB_STATE), null, mHandler);
+            mContext.registerReceiver(mUsbReceiver,
+                    new IntentFilter(mUmsFromBattery ? Intent.ACTION_BATTERY_CHANGED
+                            : UsbManager.ACTION_USB_STATE), null, mHandler);
+            if (mUmsFromBattery) {
+                mUsbObserver.startObserving("power_supply");
+            }
         }
 
         // Add OBB Action Handler to MountService thread.
