@@ -5749,6 +5749,10 @@ public final class BatteryStatsImpl extends BatteryStats {
     private NetworkStats mNetworkSummaryCache;
     private NetworkStats mNetworkDetailCache;
 
+    // A WTF while holding BatteryStats can call into ActivityManager/DropBox
+    // and invert their lock order on legacy kernels without xt_qtaguid.
+    private boolean mNetworkStatsUnavailable;
+
     private NetworkStats getNetworkStatsSummary() {
         // NOTE: calls from BatteryStatsService already hold this lock
         synchronized (this) {
@@ -5760,7 +5764,10 @@ public final class BatteryStatsImpl extends BatteryStats {
                     try {
                         mNetworkSummaryCache = mNetworkStatsFactory.readNetworkStatsSummaryDev();
                     } catch (IllegalStateException e) {
-                        Log.wtf(TAG, "problem reading network stats", e);
+                        if (!mNetworkStatsUnavailable) {
+                            mNetworkStatsUnavailable = true;
+                            Log.w(TAG, "network stats unavailable, reporting empty: " + e);
+                        }
                     }
                 }
 
@@ -5784,7 +5791,10 @@ public final class BatteryStatsImpl extends BatteryStats {
                         mNetworkDetailCache = mNetworkStatsFactory
                                 .readNetworkStatsDetail().groupedByUid();
                     } catch (IllegalStateException e) {
-                        Log.wtf(TAG, "problem reading network stats", e);
+                        if (!mNetworkStatsUnavailable) {
+                            mNetworkStatsUnavailable = true;
+                            Log.w(TAG, "network stats unavailable, reporting empty: " + e);
+                        }
                     }
                 }
 
