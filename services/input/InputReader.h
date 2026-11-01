@@ -1716,6 +1716,7 @@ public:
     MultiTouchInputMapper(InputDevice* device);
     virtual ~MultiTouchInputMapper();
 
+    virtual void configure(nsecs_t when, const InputReaderConfiguration* config, uint32_t changes);
     virtual void reset(nsecs_t when);
     virtual void process(const RawEvent* rawEvent);
 
@@ -1726,6 +1727,7 @@ protected:
 
 private:
     MultiTouchMotionAccumulator mMultiTouchMotionAccumulator;
+    bool mDropZeroTouchMajor;
 
     // Specifies the pointer id bits that are in use, and their associated tracking id.
     BitSet32 mPointerIdBits;

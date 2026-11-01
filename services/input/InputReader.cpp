@@ -5948,7 +5948,17 @@ bool SingleTouchInputMapper::hasStylus() const {
 // --- MultiTouchInputMapper ---
 
 MultiTouchInputMapper::MultiTouchInputMapper(InputDevice* device) :
-        TouchInputMapper(device) {
+        TouchInputMapper(device), mDropZeroTouchMajor(false) {
+}
+
+void MultiTouchInputMapper::configure(nsecs_t when,
+        const InputReaderConfiguration* config, uint32_t changes) {
+    TouchInputMapper::configure(when, config, changes);
+    if (!changes) {
+        // Older Type A drivers may send a zero-area contact to signal release.
+        getDevice()->getConfiguration().tryGetProperty(
+                String8("touch.filter.zeroTouchMajor"), mDropZeroTouchMajor);
+    }
 }
 
 MultiTouchInputMapper::~MultiTouchInputMapper() {
@@ -5977,6 +5987,11 @@ void MultiTouchInputMapper::syncTouch(nsecs_t when, bool* outHavePointerIds) {
         const MultiTouchMotionAccumulator::Slot* inSlot =
                 mMultiTouchMotionAccumulator.getSlot(inIndex);
         if (!inSlot->isInUse()) {
+            continue;
+        }
+
+        if (mDropZeroTouchMajor && !mRawPointerAxes.slot.valid
+                && mRawPointerAxes.touchMajor.valid && inSlot->getTouchMajor() == 0) {
             continue;
         }
 
