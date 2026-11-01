@@ -870,6 +870,8 @@ static void android_view_GLES20Canvas_clearLayerUpdates(JNIEnv* env, jobject cla
 static jboolean android_view_GLES20Canvas_isAvailable(JNIEnv* env, jobject clazz) {
 #ifdef USE_OPENGL_RENDERER
     char prop[PROPERTY_VALUE_MAX];
+    property_get("ro.config.disable_hw_accel", prop, "0");
+    if (atoi(prop) != 0) return JNI_FALSE;
     if (property_get("ro.kernel.qemu", prop, NULL) == 0) {
         // not in the emulator
         return JNI_TRUE;
