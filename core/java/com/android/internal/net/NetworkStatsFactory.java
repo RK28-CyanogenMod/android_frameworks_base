@@ -28,6 +28,8 @@ import android.os.SystemClock;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.util.ProcFileReader;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -45,6 +47,7 @@ public class NetworkStatsFactory {
 
     /** Path to {@code /proc/net/xt_qtaguid/iface_stat_all}. */
     private final File mStatsXtIfaceAll;
+    private final File mStatsDev;
     /** Path to {@code /proc/net/xt_qtaguid/iface_stat_fmt}. */
     private final File mStatsXtIfaceFmt;
     /** Path to {@code /proc/net/xt_qtaguid/stats}. */
@@ -57,6 +60,7 @@ public class NetworkStatsFactory {
     @VisibleForTesting
     public NetworkStatsFactory(File procRoot) {
         mStatsXtIfaceAll = new File(procRoot, "net/xt_qtaguid/iface_stat_all");
+        mStatsDev = new File(procRoot, "net/dev");
         mStatsXtIfaceFmt = new File(procRoot, "net/xt_qtaguid/iface_stat_fmt");
         mStatsXtUid = new File(procRoot, "net/xt_qtaguid/stats");
     }
@@ -77,6 +81,9 @@ public class NetworkStatsFactory {
 
         ProcFileReader reader = null;
         try {
+            if (!mStatsXtIfaceAll.exists()) {
+                return readNetworkStatsSummaryLegacy();
+            }
             reader = new ProcFileReader(new FileInputStream(mStatsXtIfaceAll));
 
             while (reader.hasMoreData()) {
@@ -113,6 +120,34 @@ public class NetworkStatsFactory {
         } finally {
             IoUtils.closeQuietly(reader);
             StrictMode.setThreadPolicy(savedPolicy);
+        }
+        return stats;
+    }
+
+    /** Interface totals on kernels predating xt_qtaguid; no UID attribution. */
+    private NetworkStats readNetworkStatsSummaryLegacy() throws IOException {
+        final NetworkStats stats = new NetworkStats(SystemClock.elapsedRealtime(), 6);
+        BufferedReader reader = new BufferedReader(new FileReader(mStatsDev));
+        try {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                final int colon = line.lastIndexOf(':');
+                if (colon < 0) continue; // two /proc/net/dev header lines
+                final String[] fields = line.substring(colon + 1).trim().split("\\s+");
+                if (fields.length < 16) throw new IOException("short net/dev row: " + line);
+                final NetworkStats.Entry entry = new NetworkStats.Entry();
+                entry.iface = line.substring(0, colon).trim();
+                entry.uid = UID_ALL;
+                entry.set = SET_ALL;
+                entry.tag = TAG_NONE;
+                entry.rxBytes = Long.parseLong(fields[0]);
+                entry.rxPackets = Long.parseLong(fields[1]);
+                entry.txBytes = Long.parseLong(fields[8]);
+                entry.txPackets = Long.parseLong(fields[9]);
+                stats.addValues(entry);
+            }
+        } finally {
+            IoUtils.closeQuietly(reader);
         }
         return stats;
     }
