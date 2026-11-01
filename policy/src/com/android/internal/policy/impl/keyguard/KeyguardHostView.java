@@ -1282,9 +1282,14 @@ public class KeyguardHostView extends KeyguardViewBase {
     private int allocateIdForDefaultAppWidget() {
         int appWidgetId;
         Resources res = getContext().getResources();
-        ComponentName defaultAppWidget = new ComponentName(
-                res.getString(R.string.widget_default_package_name),
-                res.getString(R.string.widget_default_class_name));
+        String packageName = res.getString(R.string.widget_default_package_name);
+        String className = res.getString(R.string.widget_default_class_name);
+        // An empty default requests the built-in clock/status view. Do not
+        // allocate and bind a missing provider every time Keyguard is created.
+        if (packageName.length() == 0 || className.length() == 0) {
+            return AppWidgetManager.INVALID_APPWIDGET_ID;
+        }
+        ComponentName defaultAppWidget = new ComponentName(packageName, className);
 
         // Note: we don't support configuring the widget
         appWidgetId = mAppWidgetHost.allocateAppWidgetId();
