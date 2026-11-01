@@ -56,6 +56,7 @@ public class CircleBattery extends ImageView implements BatteryController.Batter
     private int     mWarningLevel;  // battery level under which circle should become red
     private int     mAnimOffset;    // current level of charging animation
     private boolean mIsAnimating;   // stores charge-animation status to reliably remove callbacks
+    private final int mChargeAnimationDelayMs;
 
     private int     mCircleSize;    // draw size of circle. read rather complicated from
                                     // another status bar icon, so it fits the icon size
@@ -73,7 +74,7 @@ public class CircleBattery extends ImageView implements BatteryController.Batter
     // runnable to invalidate view via mHandler.postDelayed() call
     private final Runnable mInvalidate = new Runnable() {
         public void run() {
-            if (mActivated && mAttached) {
+            if (mActivated && mAttached && isShown()) {
                 invalidate();
             }
         }
@@ -117,6 +118,8 @@ public class CircleBattery extends ImageView implements BatteryController.Batter
         super(context, attrs, defStyle);
 
         mContext = context;
+        mChargeAnimationDelayMs = Math.max(50, Math.min(1000,
+                android.os.SystemProperties.getInt("ro.rk28.battery_anim_ms", 50)));
         mHandler = new Handler();
 
         mObserver = new SettingsObserver(mHandler);
@@ -167,11 +170,31 @@ public class CircleBattery extends ImageView implements BatteryController.Batter
         super.onDetachedFromWindow();
         if (mAttached) {
             mAttached = false;
+            stopChargeAnim();
             mObserver.unobserve();
             mRectLeft = null; // makes sure, size based variables get
                                 // recalculated on next attach
             mCircleSize = 0;    // makes sure, mCircleSize is reread from icons on
                                 // next attach
+        }
+    }
+
+    private void stopChargeAnim() {
+        mHandler.removeCallbacks(mInvalidate);
+        mIsAnimating = false;
+        mAnimOffset = 0;
+    }
+
+    @Override
+    protected void onVisibilityChanged(View changedView, int visibility) {
+        super.onVisibilityChanged(changedView, visibility);
+        // Ancestor visibility changes must also stop a hidden panel's timer.
+        if (mHandler != null) {
+            if (mActivated && mAttached && isShown()) {
+                invalidate();
+            } else {
+                stopChargeAnim();
+            }
         }
     }
 
@@ -183,6 +206,7 @@ public class CircleBattery extends ImageView implements BatteryController.Batter
                 || batteryStyle == BatteryController.BATTERY_STYLE_CIRCLE_PERCENT);
         mPercentage = (batteryStyle == BatteryController.BATTERY_STYLE_CIRCLE_PERCENT);
 
+        if (!mActivated) stopChargeAnim();
         updateVisibility();
     }
 
@@ -196,7 +220,7 @@ public class CircleBattery extends ImageView implements BatteryController.Batter
     protected void updateVisibility() {
         setVisibility(mActivated && isBatteryPresent() ? View.VISIBLE : View.GONE);
 
-        if (mActivated && mAttached) {
+        if (mActivated && mAttached && isShown()) {
             invalidate();
         }
     }
@@ -271,7 +295,8 @@ public class CircleBattery extends ImageView implements BatteryController.Batter
      * uses mInvalidate for delayed invalidate() callbacks
      */
     private void updateChargeAnim() {
-        if (getBatteryStatus() != BatteryManager.BATTERY_STATUS_CHARGING) {
+        if (!mActivated || !mAttached || !isShown() ||
+                getBatteryStatus() != BatteryManager.BATTERY_STATUS_CHARGING) {
             if (mIsAnimating) {
                 mIsAnimating = false;
                 mAnimOffset = 0;
@@ -285,11 +310,12 @@ public class CircleBattery extends ImageView implements BatteryController.Batter
         if (mAnimOffset > 360) {
             mAnimOffset = 0;
         } else {
-            mAnimOffset += 3;
+            mAnimOffset += 3 * mChargeAnimationDelayMs / 50;
         }
 
         mHandler.removeCallbacks(mInvalidate);
-        mHandler.postDelayed(mInvalidate, 50);
+        // Avoid 20 Hz software composition for an otherwise idle tablet.
+        mHandler.postDelayed(mInvalidate, mChargeAnimationDelayMs);
     }
 
     /**
