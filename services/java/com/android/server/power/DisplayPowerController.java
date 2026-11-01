@@ -751,7 +751,24 @@ final class DisplayPowerController {
 
         // Animate the screen on or off.
         if (!mScreenOffBecauseOfProximity) {
-            if (wantScreenOn(mPowerRequest.screenState)) {
+            if (android.os.SystemProperties.getBoolean("ro.rk28.disable_crt", false)) {
+                // The stock RK2818 display cannot recover reliably from CRT/GL
+                // effects. Preserve the screen-on blocker, but never prepare an
+                // electron-beam surface or start either animator on this board.
+                if (wantScreenOn(mPowerRequest.screenState)) {
+                    setScreenOn(true);
+                    if (mPowerRequest.blockScreenOn
+                            && mPowerState.getElectronBeamLevel() == 0.0f) {
+                        blockScreenOn();
+                    } else {
+                        unblockScreenOn();
+                        mPowerState.setElectronBeamLevel(1.0f);
+                    }
+                } else {
+                    mPowerState.setElectronBeamLevel(0.0f);
+                    setScreenOn(false);
+                }
+            } else if (wantScreenOn(mPowerRequest.screenState)) {
                 // Want screen on.
                 // Wait for previous off animation to complete beforehand.
                 // It is relatively short but if we cancel it and switch to the

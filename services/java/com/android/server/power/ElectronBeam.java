@@ -125,6 +125,10 @@ final class ElectronBeam {
      * @return True if the electron beam is ready, false if it is uncontrollable.
      */
     public boolean prepare(int mode) {
+        if (android.os.SystemProperties.getBoolean("ro.rk28.disable_crt", false)
+                || android.os.SystemProperties.getBoolean("ro.config.disable_hw_accel", false)) {
+            return false;
+        }
         if (DEBUG) {
             Slog.d(TAG, "prepare: mode=" + mode);
         }
